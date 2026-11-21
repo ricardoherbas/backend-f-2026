@@ -1,6 +1,16 @@
 import {Request, Response, NextFunction} from 'express';
 import {RequestAutenticado} from '../middlewares/auth.middleware';
-import {crearPago, obtenerPago, listarPagos, actualizarPago, eliminarPago} from '../services/pago.service';
+import {crearPago, obtenerPago, listarPagos, actualizarPago, eliminarPago, generarReportePagos} from '../services/pago.service';
+import {texto, numero} from '../utils/listado';
+
+const leerFiltros = (req: RequestAutenticado) => ({
+    busqueda: texto(req.query.busqueda),
+    estado: texto(req.query.estado),
+    medio_pago: texto(req.query.medio_pago),
+    paciente_id: numero(req.query.paciente_id),
+    periodo_desde: texto(req.query.periodo_desde),
+    periodo_hasta: texto(req.query.periodo_hasta)
+});
 
 export const crear = async (
     req: Request,
@@ -60,14 +70,48 @@ export const listar = async (
                 ? req.usuario.persona_id
                 : undefined;
 
-        const pagos =
-            await listarPagos(
-                personaIdFamiliar
-            );
-
-        res.status(200).json(
-            pagos
+        const resultado = await listarPagos(
+            {
+                page: numero(req.query.page),
+                limit: numero(req.query.limit),
+                sortBy: texto(req.query.sortBy),
+                order: texto(req.query.order),
+                ...leerFiltros(req)
+            },
+            personaIdFamiliar
         );
+
+        res.status(200).json(resultado);
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const reporte = async (
+    req: RequestAutenticado,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+    try {
+        const personaIdFamiliar =
+            req.usuario?.rol === 'familiar'
+                ? req.usuario.persona_id
+                : undefined;
+
+        const archivo = await generarReportePagos(
+            leerFiltros(req),
+            personaIdFamiliar
+        );
+
+        res.setHeader(
+            'Content-Type',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        );
+        res.setHeader(
+            'Content-Disposition',
+            'attachment; filename="pagos.xlsx"'
+        );
+        res.status(200).send(archivo);
     } catch (error) {
         next(error);
     }
