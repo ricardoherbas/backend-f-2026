@@ -1,0 +1,205 @@
+@startchen
+
+' === ENTIDADES ===
+entity PERSONAS {
+  id <<key>>
+  nombre
+  apellido
+  dni
+  fecha_nacimiento
+  telefono
+}
+
+entity USUARIOS {
+  id <<key>>
+  email
+  password_hash
+  rol
+  activo
+  creado_en
+  actualizado_en
+}
+
+entity TOKENS_RECUPERACION {
+  id <<key>>
+  token_hash
+  expira_en
+  usado
+  creado_en
+}
+
+entity ADMINISTRADORES {
+  id <<key>>
+}
+
+entity SECRETARIAS {
+  id <<key>>
+}
+
+entity CUIDADORES {
+  id <<key>>
+}
+
+entity FAMILIARES {
+  id <<key>>
+}
+
+entity PACIENTES {
+  id <<key>>
+  direccion
+  obra_social
+  observaciones
+  activo
+  creado_en
+}
+
+entity TURNOS {
+  id <<key>>
+  dia_semana
+  hora_inicio
+  hora_fin
+  activo
+  creado_en
+}
+
+entity MEDICAMENTOS {
+  id <<key>>
+  nombre
+  presentacion
+  cantidad
+}
+
+entity PAGOS {
+  id <<key>>
+  periodo
+  monto
+  fecha_pago
+  medio_pago
+  estado
+  observaciones
+  creado_en
+}
+
+entity PARTES_DIARIOS {
+  id <<key>>
+  fecha
+  animo
+  alimentacion
+  descanso
+  higiene
+  novedades
+  observaciones
+  creado_en
+}
+
+' === RELACIONES (ROMBOS) ===
+
+relationship TIENE_USUARIO {
+}
+
+relationship ES_ADMINISTRADOR {
+}
+
+relationship ES_SECRETARIA {
+}
+
+relationship ES_CUIDADOR {
+}
+
+relationship ES_FAMILIAR {
+}
+
+relationship ES_PACIENTE {
+}
+
+relationship GENERA_TOKEN {
+}
+
+relationship REALIZA_PAGO {
+}
+
+' Relación N:M con atributos propios (vinculos_familiares)
+relationship VINCULO_FAMILIAR {
+  id <<key>>
+  parentesco
+  es_contacto_principal
+  codigo_vinculacion
+  codigo_usado
+  expira_en
+  activo
+  creado_en
+}
+
+' Relación N:M con atributos propios (tratamientos)
+relationship TRATAMIENTO {
+  id <<key>>
+  dosis
+  frecuencia
+  horario
+  desde
+  hasta
+  activa
+  creado_en
+}
+
+' Relación Ternaria (asignaciones) con entidad débil/asociativa
+entity ASIGNACIONES {
+  id <<key>>
+  activo
+  creado_en
+}
+
+relationship SE_ASIGNA {
+}
+
+relationship REGISTRA_PARTE {
+}
+
+' === CONEXIONES Y CARDINALIDADES ===
+
+' Persona -> Subtipos / Usuario (1:1)
+PERSONAS -1- TIENE_USUARIO
+TIENE_USUARIO -1- USUARIOS
+
+PERSONAS -1- ES_ADMINISTRADOR
+ES_ADMINISTRADOR -1- ADMINISTRADORES
+
+PERSONAS -1- ES_SECRETARIA
+ES_SECRETARIA -1- SECRETARIAS
+
+PERSONAS -1- ES_CUIDADOR
+ES_CUIDADOR -1- CUIDADORES
+
+PERSONAS -1- ES_FAMILIAR
+ES_FAMILIAR -1- FAMILIARES
+
+PERSONAS -1- ES_PACIENTE
+ES_PACIENTE -1- PACIENTES
+
+' Usuario -> Tokens (1:N)
+USUARIOS -1- GENERA_TOKEN
+GENERA_TOKEN -N- TOKENS_RECUPERACION
+
+' Paciente -> Pagos (1:N)
+PACIENTES -1- REALIZA_PAGO
+REALIZA_PAGO -N- PAGOS
+
+' Familiar <-> Paciente (N:M)
+FAMILIARES -N- VINCULO_FAMILIAR
+VINCULO_FAMILIAR -M- PACIENTES
+
+' Paciente <-> Medicamento (N:M)
+PACIENTES -N- TRATAMIENTO
+TRATAMIENTO -M- MEDICAMENTOS
+
+' Asignaciones (Ternaria entre Turno, Cuidador y Paciente)
+TURNOS -1- SE_ASIGNA
+CUIDADORES -1- SE_ASIGNA
+PACIENTES -1- SE_ASIGNA
+SE_ASIGNA -N- ASIGNACIONES
+
+' Asignaciones -> Partes Diarios (1:N)
+ASIGNACIONES -1- REGISTRA_PARTE
+REGISTRA_PARTE -N- PARTES_DIARIOS
+
+@endchen
