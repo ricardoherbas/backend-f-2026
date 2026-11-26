@@ -1,15 +1,17 @@
 import {Router} from 'express';
-import {crear, obtener, listar, actualizar, eliminar} from '../controllers/asignacion.controller';
+import {crear, obtener, listar, reporte, actualizar, eliminar} from '../controllers/asignacion.controller';
 import {verificarToken} from '../middlewares/auth.middleware';
 import {verificarRol} from '../middlewares/rol.middleware';
-import {validarAsignacion} from '../validators/asignacion.validator';
+import {validarAsignacion, validarAsignacionParcial} from '../validators/asignacion.validator';
 
 const router = Router();
 
 router.post('/', verificarToken, verificarRol('administrador', 'secretaria'), validarAsignacion, crear);
 router.get('/', verificarToken, verificarRol('administrador', 'secretaria', 'cuidadora'), listar);
+router.get('/reporte', verificarToken, verificarRol('administrador', 'secretaria', 'cuidadora'), reporte);
 router.get('/:id', verificarToken, verificarRol('administrador', 'secretaria', 'cuidadora'), obtener);
 router.put('/:id', verificarToken, verificarRol('administrador', 'secretaria'), validarAsignacion, actualizar);
+router.patch('/:id', verificarToken, verificarRol('administrador', 'secretaria'), validarAsignacionParcial, actualizar);
 router.delete('/:id', verificarToken, verificarRol('administrador'), eliminar);
 
 export default router;

@@ -4,6 +4,7 @@ import {DatosCrearPago, DatosActualizarPago} from '../interfaces/pago.interface'
 import {EstadoPago} from '../types/estado-pago.type';
 import {MedioPago} from '../types/medio-pago.type';
 import {obtenerPacientesVinculados} from './vinculoFamiliar.service';
+import {Workbook} from 'exceljs';
 import {AppError} from '../utils/app-error';
 
 interface FiltrosPagos {
@@ -217,13 +218,11 @@ export const listarPagosPaginado = async (
     });
 
     return {
-        datos: resultado.rows,
-        paginacion: {
-            pagina: page,
-            limite: limit,
-            total: resultado.count,
-            totalPaginas: Math.ceil(resultado.count / limit)
-        }
+        data: resultado.rows,
+        total: resultado.count,
+        page,
+        limit,
+        totalPages: Math.ceil(resultado.count / limit)
     };
 };
 
@@ -280,4 +279,64 @@ export const eliminarPago = async (
     }
 
     await pago.destroy();
+};
+
+const LIMITE_REPORTE = 10000;
+
+interface PagoReporte {
+    id: number;
+    periodo: string;
+    monto: number | string;
+    fecha_pago: string | null;
+    medio_pago: string | null;
+    estado: string;
+    observaciones: string | null;
+    paciente?: {
+        persona?: {nombre: string; apellido: string; dni: string};
+    };
+}
+
+export const generarReportePagos = async (
+    filtros: Omit<FiltrosPagos, 'page' | 'limit'>,
+    personaIdFamiliar?: number
+): Promise<Buffer> => {
+    const {data} = await listarPagosPaginado(
+        {...filtros, page: 1, limit: LIMITE_REPORTE},
+        personaIdFamiliar
+    );
+
+    const libro = new Workbook();
+    const hoja = libro.addWorksheet('Pagos');
+
+    hoja.columns = [
+        {header: 'ID', key: 'id', width: 8},
+        {header: 'Paciente', key: 'paciente', width: 28},
+        {header: 'DNI', key: 'dni', width: 14},
+        {header: 'Período', key: 'periodo', width: 14},
+        {header: 'Monto', key: 'monto', width: 14},
+        {header: 'Fecha de pago', key: 'fecha_pago', width: 16},
+        {header: 'Medio de pago', key: 'medio_pago', width: 16},
+        {header: 'Estado', key: 'estado', width: 12},
+        {header: 'Observaciones', key: 'observaciones', width: 36}
+    ];
+    hoja.getRow(1).font = {bold: true};
+
+    data.forEach((pago) => {
+        const fila = pago.toJSON() as unknown as PagoReporte;
+        const persona = fila.paciente?.persona;
+
+        hoja.addRow({
+            id: fila.id,
+            paciente: persona ? `${persona.apellido}, ${persona.nombre}` : '',
+            dni: persona?.dni ?? '',
+            periodo: fila.periodo,
+            monto: Number(fila.monto),
+            fecha_pago: fila.fecha_pago ?? '',
+            medio_pago: fila.medio_pago ?? '',
+            estado: fila.estado,
+            observaciones: fila.observaciones ?? ''
+        });
+    });
+
+    return Buffer.from(await libro.xlsx.writeBuffer());
 };

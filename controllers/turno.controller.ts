@@ -6,7 +6,8 @@ import {
     listarTurnos,
     listarTurnosPaginado,
     actualizarTurno,
-    eliminarTurno
+    eliminarTurno,
+    generarReporteTurnos
 } from '../services/turno.service';
 
 export const crear = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -133,6 +134,55 @@ export const eliminar = async (req: Request, res: Response, next: NextFunction):
         res.status(200).json({
             mensaje: 'Turno eliminado correctamente'
         });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const reporte = async (req: RequestAutenticado, res: Response, next: NextFunction): Promise<void> => {
+    try {
+        const personaIdCuidadora = req.usuario?.rol === 'cuidadora'
+            ? req.usuario.persona_id
+            : undefined;
+
+        const {search, dia_semana, activo, sortBy, order} = req.query;
+
+        const direccion = String(order ?? 'ASC').toUpperCase();
+
+        if (!['ASC', 'DESC'].includes(direccion)) {
+            res.status(400).json({
+                mensaje: 'El parámetro order debe ser ASC o DESC'
+            });
+            return;
+        }
+
+        let filtroActivo: boolean | undefined;
+
+        if (activo !== undefined) {
+            const valorActivo = String(activo).toLowerCase();
+
+            if (!['true', 'false'].includes(valorActivo)) {
+                res.status(400).json({
+                    mensaje: 'El parámetro activo debe ser true o false'
+                });
+                return;
+            }
+
+            filtroActivo = valorActivo === 'true';
+        }
+
+        const archivo = await generarReporteTurnos({
+            search: search ? String(search).trim() : undefined,
+            dia_semana: dia_semana ? String(dia_semana) : undefined,
+            activo: filtroActivo,
+            sortBy: sortBy ? String(sortBy) : 'id',
+            order: direccion as 'ASC' | 'DESC',
+            personaIdCuidadora
+        });
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename="turnos.xlsx"');
+        res.status(200).send(archivo);
     } catch (error) {
         next(error);
     }

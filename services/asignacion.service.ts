@@ -1,6 +1,7 @@
 import {Op, WhereOptions, Order, Includeable} from 'sequelize';
 import {Asignacion, Turno, Cuidadora, Paciente, Persona} from '../models';
 import {DatosCrearAsignacion, DatosActualizarAsignacion} from '../interfaces/asignacion.interface';
+import {Workbook} from 'exceljs';
 import {AppError} from '../utils/app-error';
 
 interface FiltrosAsignaciones {
@@ -245,13 +246,11 @@ export const listarAsignacionesPaginado = async (
     });
 
     return {
-        datos: resultado.rows,
-        paginacion: {
-            pagina: page,
-            limite: limit,
-            total: resultado.count,
-            totalPaginas: Math.ceil(resultado.count / limit)
-        }
+        data: resultado.rows,
+        total: resultado.count,
+        page,
+        limit,
+        totalPages: Math.ceil(resultado.count / limit)
     };
 };
 
@@ -300,4 +299,65 @@ export const eliminarAsignacion = async (id: number) => {
     }
 
     await asignacion.destroy();
+};
+
+const LIMITE_REPORTE = 10000;
+
+interface PersonaReporte {
+    nombre: string;
+    apellido: string;
+    dni: string;
+}
+
+interface AsignacionReporte {
+    id: number;
+    activo: boolean;
+    turno?: {dia_semana: string; hora_inicio: string; hora_fin: string};
+    cuidadora?: {persona?: PersonaReporte};
+    paciente?: {persona?: PersonaReporte};
+}
+
+const nombreCompleto = (persona?: PersonaReporte): string =>
+    persona ? `${persona.apellido}, ${persona.nombre}` : '';
+
+export const generarReporteAsignaciones = async (
+    filtros: Omit<FiltrosAsignaciones, 'page' | 'limit'>
+): Promise<Buffer> => {
+    const {data} = await listarAsignacionesPaginado({
+        ...filtros,
+        page: 1,
+        limit: LIMITE_REPORTE
+    });
+
+    const libro = new Workbook();
+    const hoja = libro.addWorksheet('Asignaciones');
+
+    hoja.columns = [
+        {header: 'ID', key: 'id', width: 8},
+        {header: 'Turno', key: 'turno', width: 30},
+        {header: 'Cuidadora', key: 'cuidadora', width: 28},
+        {header: 'DNI cuidadora', key: 'dni_cuidadora', width: 16},
+        {header: 'Paciente', key: 'paciente', width: 28},
+        {header: 'DNI paciente', key: 'dni_paciente', width: 16},
+        {header: 'Activa', key: 'activo', width: 10}
+    ];
+    hoja.getRow(1).font = {bold: true};
+
+    data.forEach((asignacion) => {
+        const fila = asignacion.toJSON() as unknown as AsignacionReporte;
+
+        hoja.addRow({
+            id: fila.id,
+            turno: fila.turno
+                ? `${fila.turno.dia_semana} ${fila.turno.hora_inicio} - ${fila.turno.hora_fin}`
+                : '',
+            cuidadora: nombreCompleto(fila.cuidadora?.persona),
+            dni_cuidadora: fila.cuidadora?.persona?.dni ?? '',
+            paciente: nombreCompleto(fila.paciente?.persona),
+            dni_paciente: fila.paciente?.persona?.dni ?? '',
+            activo: fila.activo ? 'Sí' : 'No'
+        });
+    });
+
+    return Buffer.from(await libro.xlsx.writeBuffer());
 };

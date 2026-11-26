@@ -32,7 +32,19 @@ export class Server {
     }
 
     middleware() {
-        this.app.use(cors());
+        const frontendUrl = process.env.FRONTEND_URL?.trim().replace(/\/+$/, '');
+
+        if (!frontendUrl) {
+            throw new Error('Falta la variable FRONTEND_URL para configurar el CORS');
+        }
+
+        this.app.use(cors({
+            // Solo se permite el origen del frontend. Las peticiones sin
+            // cabecera Origin (curl, Postman, servidor a servidor) no pasan por CORS.
+            origin: (origin, callback) => {
+                callback(null, !origin || origin === frontendUrl);
+            }
+        }));
         this.app.use(express.json());
     }
 

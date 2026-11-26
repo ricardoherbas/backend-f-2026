@@ -4,6 +4,7 @@ import {
     DatosCrearTurno,
     DatosActualizarTurno
 } from '../interfaces/turno.interface';
+import {Workbook} from 'exceljs';
 import {AppError} from '../utils/app-error';
 import {obtenerCuidadoraPorPersona} from './asignacion.service';
 
@@ -165,13 +166,11 @@ export const listarTurnosPaginado = async (filtros: FiltrosTurnos) => {
     });
 
     return {
-        datos: resultado.rows,
-        paginacion: {
-            pagina: page,
-            limite: limit,
-            total: resultado.count,
-            totalPaginas: Math.ceil(resultado.count / limit)
-        }
+        data: resultado.rows,
+        total: resultado.count,
+        page,
+        limit,
+        totalPages: Math.ceil(resultado.count / limit)
     };
 };
 
@@ -180,6 +179,20 @@ export const actualizarTurno = async (id: number, datos: DatosActualizarTurno) =
 
     if (!turno) {
         throw new AppError('Turno no encontrado', 404);
+    }
+
+    // Si solo se modifica una de las dos horas, se compara con la guardada.
+    const normalizarHora = (hora: string): string =>
+        hora.length === 5 ? `${hora}:00` : hora;
+
+    const horaInicio = normalizarHora(String(datos.hora_inicio ?? turno.hora_inicio));
+    const horaFin = normalizarHora(String(datos.hora_fin ?? turno.hora_fin));
+
+    if (horaFin <= horaInicio) {
+        throw new AppError(
+            'La hora de fin debe ser posterior a la hora de inicio',
+            400
+        );
     }
 
     await turno.update(datos);
@@ -195,4 +208,40 @@ export const eliminarTurno = async (id: number) => {
     }
 
     await turno.destroy();
+};
+
+const LIMITE_REPORTE = 10000;
+
+export const generarReporteTurnos = async (
+    filtros: Omit<FiltrosTurnos, 'page' | 'limit'>
+): Promise<Buffer> => {
+    const {data} = await listarTurnosPaginado({
+        ...filtros,
+        page: 1,
+        limit: LIMITE_REPORTE
+    });
+
+    const libro = new Workbook();
+    const hoja = libro.addWorksheet('Turnos');
+
+    hoja.columns = [
+        {header: 'ID', key: 'id', width: 8},
+        {header: 'Día', key: 'dia_semana', width: 16},
+        {header: 'Hora de inicio', key: 'hora_inicio', width: 16},
+        {header: 'Hora de fin', key: 'hora_fin', width: 16},
+        {header: 'Activo', key: 'activo', width: 10}
+    ];
+    hoja.getRow(1).font = {bold: true};
+
+    data.forEach((turno) => {
+        hoja.addRow({
+            id: turno.id,
+            dia_semana: turno.dia_semana,
+            hora_inicio: turno.hora_inicio,
+            hora_fin: turno.hora_fin,
+            activo: turno.activo ? 'Sí' : 'No'
+        });
+    });
+
+    return Buffer.from(await libro.xlsx.writeBuffer());
 };

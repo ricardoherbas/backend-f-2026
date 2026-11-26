@@ -6,7 +6,8 @@ import {
     listarAsignaciones,
     listarAsignacionesPaginado,
     actualizarAsignacion,
-    eliminarAsignacion
+    eliminarAsignacion,
+    generarReporteAsignaciones
 } from '../services/asignacion.service';
 
 export const crear = async (
@@ -208,6 +209,86 @@ export const eliminar = async (
         res.status(200).json({
             mensaje: 'Asignación eliminada correctamente'
         });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const reporte = async (
+    req: RequestAutenticado,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+    try {
+        const personaIdCuidadora = req.usuario?.rol === 'cuidadora'
+            ? req.usuario.persona_id
+            : undefined;
+
+        const {
+            search,
+            turno_id,
+            cuidador_id,
+            paciente_id,
+            activo,
+            sortBy,
+            order
+        } = req.query;
+
+        const direccion = String(order ?? 'ASC').toUpperCase();
+
+        if (!['ASC', 'DESC'].includes(direccion)) {
+            res.status(400).json({
+                mensaje: 'El parámetro order debe ser ASC o DESC'
+            });
+            return;
+        }
+
+        const ids: Record<string, number | undefined> = {};
+
+        for (const [campo, valor] of Object.entries({turno_id, cuidador_id, paciente_id})) {
+            if (valor === undefined) continue;
+
+            const numero = Number(valor);
+
+            if (!Number.isInteger(numero) || numero <= 0) {
+                res.status(400).json({
+                    mensaje: `${campo} debe ser un entero positivo`
+                });
+                return;
+            }
+
+            ids[campo] = numero;
+        }
+
+        let filtroActivo: boolean | undefined;
+
+        if (activo !== undefined) {
+            const valorActivo = String(activo).toLowerCase();
+
+            if (!['true', 'false'].includes(valorActivo)) {
+                res.status(400).json({
+                    mensaje: 'El parámetro activo debe ser true o false'
+                });
+                return;
+            }
+
+            filtroActivo = valorActivo === 'true';
+        }
+
+        const archivo = await generarReporteAsignaciones({
+            search: search ? String(search).trim() : undefined,
+            turno_id: ids.turno_id,
+            cuidador_id: ids.cuidador_id,
+            paciente_id: ids.paciente_id,
+            activo: filtroActivo,
+            sortBy: sortBy ? String(sortBy) : 'id',
+            order: direccion as 'ASC' | 'DESC',
+            personaIdCuidadora
+        });
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename="asignaciones.xlsx"');
+        res.status(200).send(archivo);
     } catch (error) {
         next(error);
     }

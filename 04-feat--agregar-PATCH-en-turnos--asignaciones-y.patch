@@ -1,0 +1,387 @@
+diff --git a/routes/asignacion.route.ts b/routes/asignacion.route.ts
+index b0aec3d..0b5069b 100644
+--- a/routes/asignacion.route.ts
++++ b/routes/asignacion.route.ts
+@@ -2,7 +2,7 @@ import {Router} from 'express';
+ import {crear, obtener, listar, actualizar, eliminar} from '../controllers/asignacion.controller';
+ import {verificarToken} from '../middlewares/auth.middleware';
+ import {verificarRol} from '../middlewares/rol.middleware';
+-import {validarAsignacion} from '../validators/asignacion.validator';
++import {validarAsignacion, validarAsignacionParcial} from '../validators/asignacion.validator';
+ 
+ const router = Router();
+ 
+@@ -10,6 +10,7 @@ router.post('/', verificarToken, verificarRol('administrador', 'secretaria'), va
+ router.get('/', verificarToken, verificarRol('administrador', 'secretaria', 'cuidadora'), listar);
+ router.get('/:id', verificarToken, verificarRol('administrador', 'secretaria', 'cuidadora'), obtener);
+ router.put('/:id', verificarToken, verificarRol('administrador', 'secretaria'), validarAsignacion, actualizar);
++router.patch('/:id', verificarToken, verificarRol('administrador', 'secretaria'), validarAsignacionParcial, actualizar);
+ router.delete('/:id', verificarToken, verificarRol('administrador'), eliminar);
+ 
+ export default router;
+diff --git a/routes/pago.route.ts b/routes/pago.route.ts
+index c63f298..dc880a9 100644
+--- a/routes/pago.route.ts
++++ b/routes/pago.route.ts
+@@ -2,7 +2,7 @@ import {Router} from 'express';
+ import {crear, obtener, listar, actualizar, eliminar} from '../controllers/pago.controller';
+ import {verificarToken} from '../middlewares/auth.middleware';
+ import {verificarRol} from '../middlewares/rol.middleware';
+-import {validarPago} from '../validators/pago.validator';
++import {validarPago, validarPagoParcial} from '../validators/pago.validator';
+ 
+ const router = Router();
+ 
+@@ -10,6 +10,7 @@ router.post('/', verificarToken, verificarRol('administrador', 'secretaria'), va
+ router.get('/', verificarToken, verificarRol('administrador', 'secretaria', 'familiar'), listar);
+ router.get('/:id', verificarToken, verificarRol('administrador', 'secretaria', 'familiar'), obtener);
+ router.put('/:id', verificarToken, verificarRol('administrador', 'secretaria'), validarPago, actualizar);
++router.patch('/:id', verificarToken, verificarRol('administrador', 'secretaria'), validarPagoParcial, actualizar);
+ router.delete('/:id', verificarToken, verificarRol('administrador'), eliminar);
+ 
+ export default router;
+\ No newline at end of file
+diff --git a/routes/turno.route.ts b/routes/turno.route.ts
+index 6448073..1ae1e79 100644
+--- a/routes/turno.route.ts
++++ b/routes/turno.route.ts
+@@ -2,7 +2,7 @@ import {Router} from 'express';
+ import {crear, obtener, listar, actualizar, eliminar} from '../controllers/turno.controller';
+ import {verificarToken} from '../middlewares/auth.middleware';
+ import {verificarRol} from '../middlewares/rol.middleware';
+-import {validarTurno} from '../validators/turno.validator';
++import {validarTurno, validarTurnoParcial} from '../validators/turno.validator';
+ 
+ const router = Router();
+ 
+@@ -10,6 +10,7 @@ router.post('/', verificarToken, verificarRol('administrador', 'secretaria'), va
+ router.get('/', verificarToken, verificarRol('administrador', 'secretaria', 'cuidadora'), listar);
+ router.get('/:id', verificarToken, verificarRol('administrador', 'secretaria', 'cuidadora'), obtener);
+ router.put('/:id', verificarToken, verificarRol('administrador', 'secretaria'), validarTurno, actualizar);
++router.patch('/:id', verificarToken, verificarRol('administrador', 'secretaria'), validarTurnoParcial, actualizar);
+ router.delete('/:id', verificarToken, verificarRol('administrador'), eliminar);
+ 
+ export default router;
+diff --git a/services/turno.service.ts b/services/turno.service.ts
+index 94819e8..91d5950 100644
+--- a/services/turno.service.ts
++++ b/services/turno.service.ts
+@@ -180,6 +180,20 @@ export const actualizarTurno = async (id: number, datos: DatosActualizarTurno) =
+         throw new AppError('Turno no encontrado', 404);
+     }
+ 
++    // Si solo se modifica una de las dos horas, se compara con la guardada.
++    const normalizarHora = (hora: string): string =>
++        hora.length === 5 ? `${hora}:00` : hora;
++
++    const horaInicio = normalizarHora(String(datos.hora_inicio ?? turno.hora_inicio));
++    const horaFin = normalizarHora(String(datos.hora_fin ?? turno.hora_fin));
++
++    if (horaFin <= horaInicio) {
++        throw new AppError(
++            'La hora de fin debe ser posterior a la hora de inicio',
++            400
++        );
++    }
++
+     await turno.update(datos);
+ 
+     return turno;
+diff --git a/validators/asignacion.validator.ts b/validators/asignacion.validator.ts
+index 0ee36e7..bf697aa 100644
+--- a/validators/asignacion.validator.ts
++++ b/validators/asignacion.validator.ts
+@@ -41,4 +41,58 @@ export const validarAsignacion = (
+     }
+ 
+     next();
+-};
+\ No newline at end of file
++};
++
++const CAMPOS_ASIGNACION_EDITABLES = [
++    'turno_id',
++    'cuidador_id',
++    'paciente_id',
++    'activo',
++];
++
++// Validación para PATCH: todos los campos son opcionales, pero los que
++// lleguen se validan con las mismas reglas que en el alta.
++export const validarAsignacionParcial = (
++    req: Request,
++    res: Response,
++    next: NextFunction
++): void => {
++    const cuerpo = req.body ?? {};
++
++    const datos: Record<string, unknown> = {};
++
++    for (const campo of CAMPOS_ASIGNACION_EDITABLES) {
++        if (cuerpo[campo] !== undefined) {
++            datos[campo] = cuerpo[campo];
++        }
++    }
++
++    if (Object.keys(datos).length === 0) {
++        res.status(400).json({
++            mensaje: 'Debe enviar al menos un campo para actualizar',
++        });
++        return;
++    }
++
++    for (const campo of ['turno_id', 'cuidador_id', 'paciente_id']) {
++        const valor = datos[campo];
++
++        if (campo in datos && (!Number.isInteger(valor) || (valor as number) <= 0)) {
++            res.status(400).json({
++                mensaje: `${campo} debe ser un número entero válido`,
++            });
++            return;
++        }
++    }
++
++    if ('activo' in datos && typeof datos.activo !== 'boolean') {
++        res.status(400).json({
++            mensaje: 'activo debe ser booleano',
++        });
++        return;
++    }
++
++    req.body = datos;
++
++    next();
++};
+diff --git a/validators/pago.validator.ts b/validators/pago.validator.ts
+index a97eac5..b57ed86 100644
+--- a/validators/pago.validator.ts
++++ b/validators/pago.validator.ts
+@@ -96,4 +96,132 @@ export const validarPago = (
+     }
+ 
+     next();
+-};
+\ No newline at end of file
++};
++
++const CAMPOS_PAGO_EDITABLES = [
++    'paciente_id',
++    'periodo',
++    'monto',
++    'fecha_pago',
++    'medio_pago',
++    'estado',
++    'observaciones',
++];
++
++// Validación para PATCH: todos los campos son opcionales, pero los que
++// lleguen se validan con las mismas reglas que en el alta.
++export const validarPagoParcial = (
++    req: Request,
++    res: Response,
++    next: NextFunction
++): void => {
++    const cuerpo = req.body ?? {};
++
++    const datos: Record<string, unknown> = {};
++
++    for (const campo of CAMPOS_PAGO_EDITABLES) {
++        if (cuerpo[campo] !== undefined) {
++            datos[campo] = cuerpo[campo];
++        }
++    }
++
++    if (Object.keys(datos).length === 0) {
++        res.status(400).json({
++            mensaje: 'Debe enviar al menos un campo para actualizar',
++        });
++        return;
++    }
++
++    const {
++        paciente_id,
++        periodo,
++        monto,
++        fecha_pago,
++        medio_pago,
++        estado,
++        observaciones,
++    } = datos as {
++        paciente_id: number;
++        periodo: string;
++        monto: number;
++        fecha_pago: string | null;
++        medio_pago: string | null;
++        estado: string;
++        observaciones: string | null;
++    };
++
++    if (
++        'paciente_id' in datos &&
++        (!Number.isInteger(paciente_id) || paciente_id <= 0)
++    ) {
++        res.status(400).json({
++            mensaje: 'paciente_id debe ser un número entero válido',
++        });
++        return;
++    }
++
++    if (
++        'periodo' in datos &&
++        (!periodo || Number.isNaN(Date.parse(periodo)))
++    ) {
++        res.status(400).json({
++            mensaje: 'El período debe ser válido',
++        });
++        return;
++    }
++
++    if (
++        'monto' in datos &&
++        (typeof monto !== 'number' || !Number.isFinite(monto) || monto < 0)
++    ) {
++        res.status(400).json({
++            mensaje: 'El monto debe ser un número mayor o igual a cero',
++        });
++        return;
++    }
++
++    if (
++        'fecha_pago' in datos &&
++        fecha_pago !== null &&
++        Number.isNaN(Date.parse(fecha_pago as string))
++    ) {
++        res.status(400).json({
++            mensaje: 'La fecha de pago no es válida',
++        });
++        return;
++    }
++
++    if (
++        'medio_pago' in datos &&
++        medio_pago !== null &&
++        !mediosPagoPermitidos.includes(medio_pago as string)
++    ) {
++        res.status(400).json({
++            mensaje: 'El medio de pago no es válido',
++        });
++        return;
++    }
++
++    if ('estado' in datos && !estadosPermitidos.includes(estado)) {
++        res.status(400).json({
++            mensaje: 'El estado del pago no es válido',
++        });
++        return;
++    }
++
++    if (
++        'observaciones' in datos &&
++        observaciones !== null &&
++        typeof observaciones !== 'string'
++    ) {
++        res.status(400).json({
++            mensaje: 'Las observaciones no son válidas',
++        });
++        return;
++    }
++
++    // Solo pasan los campos permitidos
++    req.body = datos;
++
++    next();
++};
+diff --git a/validators/turno.validator.ts b/validators/turno.validator.ts
+index 281aa83..2a713a8 100644
+--- a/validators/turno.validator.ts
++++ b/validators/turno.validator.ts
+@@ -65,4 +65,87 @@ export const validarTurno = (
+     }
+ 
+     next();
+-};
+\ No newline at end of file
++};
++
++const CAMPOS_TURNO_EDITABLES = [
++    'dia_semana',
++    'hora_inicio',
++    'hora_fin',
++    'activo',
++];
++
++// Validación para PATCH: todos los campos son opcionales, pero los que
++// lleguen se validan con las mismas reglas que en el alta.
++// La comparación entre hora_inicio y hora_fin cuando solo llega una de las
++// dos se completa en el service, con el valor guardado.
++export const validarTurnoParcial = (
++    req: Request,
++    res: Response,
++    next: NextFunction
++): void => {
++    const cuerpo = req.body ?? {};
++
++    const datos: Record<string, unknown> = {};
++
++    for (const campo of CAMPOS_TURNO_EDITABLES) {
++        if (cuerpo[campo] !== undefined) {
++            datos[campo] = cuerpo[campo];
++        }
++    }
++
++    if (Object.keys(datos).length === 0) {
++        res.status(400).json({
++            mensaje: 'Debe enviar al menos un campo para actualizar',
++        });
++        return;
++    }
++
++    const { dia_semana, hora_inicio, hora_fin, activo } = datos as {
++        dia_semana: string;
++        hora_inicio: string;
++        hora_fin: string;
++        activo: unknown;
++    };
++
++    if (
++        'dia_semana' in datos &&
++        (typeof dia_semana !== 'string' || !diasPermitidos.includes(dia_semana))
++    ) {
++        res.status(400).json({
++            mensaje: 'El día de la semana no es válido',
++        });
++        return;
++    }
++
++    if ('hora_inicio' in datos && (!hora_inicio || typeof hora_inicio !== 'string')) {
++        res.status(400).json({
++            mensaje: 'La hora de inicio no es válida',
++        });
++        return;
++    }
++
++    if ('hora_fin' in datos && (!hora_fin || typeof hora_fin !== 'string')) {
++        res.status(400).json({
++            mensaje: 'La hora de fin no es válida',
++        });
++        return;
++    }
++
++    if ('hora_inicio' in datos && 'hora_fin' in datos && hora_fin <= hora_inicio) {
++        res.status(400).json({
++            mensaje: 'La hora de fin debe ser posterior a la hora de inicio',
++        });
++        return;
++    }
++
++    if ('activo' in datos && typeof activo !== 'boolean') {
++        res.status(400).json({
++            mensaje: 'activo debe ser booleano',
++        });
++        return;
++    }
++
++    req.body = datos;
++
++    next();
++};

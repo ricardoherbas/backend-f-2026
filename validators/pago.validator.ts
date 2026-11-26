@@ -97,3 +97,131 @@ export const validarPago = (
 
     next();
 };
+
+const CAMPOS_PAGO_EDITABLES = [
+    'paciente_id',
+    'periodo',
+    'monto',
+    'fecha_pago',
+    'medio_pago',
+    'estado',
+    'observaciones',
+];
+
+// Validación para PATCH: todos los campos son opcionales, pero los que
+// lleguen se validan con las mismas reglas que en el alta.
+export const validarPagoParcial = (
+    req: Request,
+    res: Response,
+    next: NextFunction
+): void => {
+    const cuerpo = req.body ?? {};
+
+    const datos: Record<string, unknown> = {};
+
+    for (const campo of CAMPOS_PAGO_EDITABLES) {
+        if (cuerpo[campo] !== undefined) {
+            datos[campo] = cuerpo[campo];
+        }
+    }
+
+    if (Object.keys(datos).length === 0) {
+        res.status(400).json({
+            mensaje: 'Debe enviar al menos un campo para actualizar',
+        });
+        return;
+    }
+
+    const {
+        paciente_id,
+        periodo,
+        monto,
+        fecha_pago,
+        medio_pago,
+        estado,
+        observaciones,
+    } = datos as {
+        paciente_id: number;
+        periodo: string;
+        monto: number;
+        fecha_pago: string | null;
+        medio_pago: string | null;
+        estado: string;
+        observaciones: string | null;
+    };
+
+    if (
+        'paciente_id' in datos &&
+        (!Number.isInteger(paciente_id) || paciente_id <= 0)
+    ) {
+        res.status(400).json({
+            mensaje: 'paciente_id debe ser un número entero válido',
+        });
+        return;
+    }
+
+    if (
+        'periodo' in datos &&
+        (!periodo || Number.isNaN(Date.parse(periodo)))
+    ) {
+        res.status(400).json({
+            mensaje: 'El período debe ser válido',
+        });
+        return;
+    }
+
+    if (
+        'monto' in datos &&
+        (typeof monto !== 'number' || !Number.isFinite(monto) || monto < 0)
+    ) {
+        res.status(400).json({
+            mensaje: 'El monto debe ser un número mayor o igual a cero',
+        });
+        return;
+    }
+
+    if (
+        'fecha_pago' in datos &&
+        fecha_pago !== null &&
+        Number.isNaN(Date.parse(fecha_pago as string))
+    ) {
+        res.status(400).json({
+            mensaje: 'La fecha de pago no es válida',
+        });
+        return;
+    }
+
+    if (
+        'medio_pago' in datos &&
+        medio_pago !== null &&
+        !mediosPagoPermitidos.includes(medio_pago as string)
+    ) {
+        res.status(400).json({
+            mensaje: 'El medio de pago no es válido',
+        });
+        return;
+    }
+
+    if ('estado' in datos && !estadosPermitidos.includes(estado)) {
+        res.status(400).json({
+            mensaje: 'El estado del pago no es válido',
+        });
+        return;
+    }
+
+    if (
+        'observaciones' in datos &&
+        observaciones !== null &&
+        typeof observaciones !== 'string'
+    ) {
+        res.status(400).json({
+            mensaje: 'Las observaciones no son válidas',
+        });
+        return;
+    }
+
+    // Solo pasan los campos permitidos
+    req.body = datos;
+
+    next();
+};

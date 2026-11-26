@@ -6,7 +6,8 @@ import {
     listarPagos,
     listarPagosPaginado,
     actualizarPago,
-    eliminarPago
+    eliminarPago,
+    generarReportePagos
 } from '../services/pago.service';
 import {EstadoPago} from '../types/estado-pago.type';
 import {MedioPago} from '../types/medio-pago.type';
@@ -255,6 +256,122 @@ export const eliminar = async (
         res.status(200).json({
             mensaje: 'Pago eliminado correctamente'
         });
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const reporte = async (
+    req: RequestAutenticado,
+    res: Response,
+    next: NextFunction
+): Promise<void> => {
+    try {
+        const personaIdFamiliar =
+            req.usuario?.rol === 'familiar'
+                ? req.usuario.persona_id
+                : undefined;
+
+        const {
+            search,
+            paciente_id,
+            estado,
+            medio_pago,
+            periodoDesde,
+            periodoHasta,
+            sortBy,
+            order
+        } = req.query;
+
+        const direccion = String(order ?? 'DESC').toUpperCase();
+
+        if (!['ASC', 'DESC'].includes(direccion)) {
+            res.status(400).json({
+                mensaje: 'El parámetro order debe ser ASC o DESC'
+            });
+            return;
+        }
+
+        const pacienteId = paciente_id !== undefined
+            ? Number(paciente_id)
+            : undefined;
+
+        if (
+            pacienteId !== undefined &&
+            (!Number.isInteger(pacienteId) || pacienteId <= 0)
+        ) {
+            res.status(400).json({
+                mensaje: 'paciente_id debe ser un entero positivo'
+            });
+            return;
+        }
+
+        const estadoFiltro = estado !== undefined
+            ? String(estado)
+            : undefined;
+
+        if (
+            estadoFiltro !== undefined &&
+            !ESTADOS_PERMITIDOS.includes(estadoFiltro)
+        ) {
+            res.status(400).json({
+                mensaje: 'El estado del pago no es válido'
+            });
+            return;
+        }
+
+        const medioPagoFiltro = medio_pago !== undefined
+            ? String(medio_pago)
+            : undefined;
+
+        if (
+            medioPagoFiltro !== undefined &&
+            !MEDIOS_PAGO_PERMITIDOS.includes(medioPagoFiltro)
+        ) {
+            res.status(400).json({
+                mensaje: 'El medio de pago no es válido'
+            });
+            return;
+        }
+
+        const periodoInicial = periodoDesde !== undefined
+            ? String(periodoDesde)
+            : undefined;
+
+        const periodoFinal = periodoHasta !== undefined
+            ? String(periodoHasta)
+            : undefined;
+
+        if ([periodoInicial, periodoFinal].some(
+            valor => valor !== undefined &&
+                (
+                    !/^\d{4}-\d{2}-\d{2}$/.test(valor) ||
+                    Number.isNaN(Date.parse(valor))
+                )
+        )) {
+            res.status(400).json({
+                mensaje: 'Los períodos deben tener el formato YYYY-MM-DD'
+            });
+            return;
+        }
+
+        const archivo = await generarReportePagos(
+            {
+                search: search ? String(search).trim() : undefined,
+                paciente_id: pacienteId,
+                estado: estadoFiltro as EstadoPago | undefined,
+                medio_pago: medioPagoFiltro as MedioPago | undefined,
+                periodoDesde: periodoInicial,
+                periodoHasta: periodoFinal,
+                sortBy: sortBy ? String(sortBy) : 'periodo',
+                order: direccion as 'ASC' | 'DESC'
+            },
+            personaIdFamiliar
+        );
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename="pagos.xlsx"');
+        res.status(200).send(archivo);
     } catch (error) {
         next(error);
     }
