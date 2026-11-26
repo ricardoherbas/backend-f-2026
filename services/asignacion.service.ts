@@ -1,6 +1,9 @@
 import {Op, WhereOptions, Order, Includeable} from 'sequelize';
 import {Asignacion, Turno, Cuidadora, Paciente, Persona} from '../models';
-import {DatosCrearAsignacion, DatosActualizarAsignacion} from '../interfaces/asignacion.interface';
+import {
+    DatosCrearAsignacion,
+    DatosActualizarAsignacion
+} from '../interfaces/asignacion.interface';
 import {AppError} from '../utils/app-error';
 
 interface FiltrosAsignaciones {
@@ -25,7 +28,9 @@ const CAMPOS_ORDENAMIENTO = [
     'creado_en'
 ];
 
-const validarRelaciones = async (datos: DatosCrearAsignacion): Promise<void> => {
+const validarRelaciones = async (
+    datos: DatosCrearAsignacion
+): Promise<void> => {
     const turno = await Turno.findByPk(datos.turno_id);
 
     if (!turno) {
@@ -42,6 +47,13 @@ const validarRelaciones = async (datos: DatosCrearAsignacion): Promise<void> => 
 
     if (!paciente) {
         throw new AppError('El paciente no existe', 404);
+    }
+
+    if (!paciente.activo) {
+        throw new AppError(
+            'No se puede asignar una cuidadora a un paciente inactivo',
+            409
+        );
     }
 };
 
@@ -272,7 +284,31 @@ export const actualizarAsignacion = async (
         activo: datos.activo ?? asignacion.activo
     };
 
-    await validarRelaciones(datosFinales);
+    if (datosFinales.activo) {
+        await validarRelaciones(datosFinales);
+    } else {
+        const turno = await Turno.findByPk(datosFinales.turno_id);
+
+        if (!turno) {
+            throw new AppError('El turno no existe', 404);
+        }
+
+        const cuidadora = await Cuidadora.findByPk(
+            datosFinales.cuidador_id
+        );
+
+        if (!cuidadora) {
+            throw new AppError('La cuidadora no existe', 404);
+        }
+
+        const paciente = await Paciente.findByPk(
+            datosFinales.paciente_id
+        );
+
+        if (!paciente) {
+            throw new AppError('El paciente no existe', 404);
+        }
+    }
 
     const asignacionExistente = await Asignacion.findOne({
         where: {
@@ -287,7 +323,7 @@ export const actualizarAsignacion = async (
         throw new AppError('La asignación ya existe', 409);
     }
 
-    await asignacion.update(datos);
+    await asignacion.update(datosFinales);
 
     return await obtenerAsignacion(id);
 };
@@ -299,5 +335,11 @@ export const eliminarAsignacion = async (id: number) => {
         throw new AppError('Asignación no encontrada', 404);
     }
 
-    await asignacion.destroy();
+    if (!asignacion.activo) {
+        throw new AppError('La asignación ya se encuentra inactiva', 409);
+    }
+
+    await asignacion.update({
+        activo: false
+    });
 };

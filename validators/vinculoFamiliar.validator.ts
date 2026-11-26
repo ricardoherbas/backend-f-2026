@@ -26,9 +26,13 @@ export const validarVinculoFamiliar = (
         return;
     }
 
-    if (!parentesco || typeof parentesco !== 'string') {
+    if (
+        typeof parentesco !== 'string' ||
+        !parentesco.trim() ||
+        parentesco.trim().length > 50
+    ) {
         res.status(400).json({
-            mensaje: 'El parentesco es obligatorio'
+            mensaje: 'El parentesco es obligatorio y no puede superar los 50 caracteres'
         });
         return;
     }

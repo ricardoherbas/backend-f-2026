@@ -1,15 +1,16 @@
-
 import {Request, Response, NextFunction} from 'express';
+
 import {
     ValidationError,
     UniqueConstraintError,
     ForeignKeyConstraintError
 } from 'sequelize';
+
 import {AppError} from '../utils/app-error';
 
 export const errorMiddleware = (
     error: Error,
-    req: Request,
+    _req: Request,
     res: Response,
     _next: NextFunction
 ): void => {
@@ -27,14 +28,8 @@ export const errorMiddleware = (
         return;
     }
 
-    if (error instanceof ValidationError) {
-        res.status(400).json({
-            mensaje: 'Los datos enviados no son válidos'
-        });
-
-        return;
-    }
-
+    // Debe comprobarse antes de ValidationError
+    // porque UniqueConstraintError hereda de ella.
     if (error instanceof UniqueConstraintError) {
         res.status(409).json({
             mensaje: 'El registro ya existe'
@@ -46,6 +41,14 @@ export const errorMiddleware = (
     if (error instanceof ForeignKeyConstraintError) {
         res.status(409).json({
             mensaje: 'No se puede realizar la operación porque existen registros relacionados'
+        });
+
+        return;
+    }
+
+    if (error instanceof ValidationError) {
+        res.status(400).json({
+            mensaje: 'Los datos enviados no son válidos'
         });
 
         return;

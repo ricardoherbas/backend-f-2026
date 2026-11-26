@@ -90,7 +90,21 @@ export const listar = async (
             order
         } = req.query;
 
-        if (page === undefined && limit === undefined) {
+        const tieneFiltros =
+            search !== undefined ||
+            paciente_id !== undefined ||
+            estado !== undefined ||
+            medio_pago !== undefined ||
+            periodoDesde !== undefined ||
+            periodoHasta !== undefined ||
+            sortBy !== undefined ||
+            order !== undefined;
+
+        if (
+            page === undefined &&
+            limit === undefined &&
+            !tieneFiltros
+        ) {
             const pagos = await listarPagos(personaIdFamiliar);
 
             res.status(200).json(pagos);

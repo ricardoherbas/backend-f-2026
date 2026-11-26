@@ -1,5 +1,5 @@
 import {Op, IncludeOptions, WhereOptions, Order} from 'sequelize';
-import {ParteDiario, Asignacion} from '../models';
+import {ParteDiario, Asignacion, Paciente} from '../models';
 import {
     DatosCrearParteDiario,
     DatosActualizarParteDiario
@@ -36,23 +36,18 @@ const obtenerIncludeAsignacion = async (
     personaIdFamiliar?: number,
     personaIdCuidadora?: number
 ): Promise<IncludeOptions> => {
-    const includeAsignacion: IncludeOptions = {
-        model: Asignacion,
-        as: 'asignacion'
-    };
+    const restricciones: WhereOptions[] = [];
 
     if (personaIdFamiliar !== undefined) {
         const pacienteIds = await obtenerPacientesVinculados(
             personaIdFamiliar
         );
 
-        includeAsignacion.where = {
+        restricciones.push({
             paciente_id: {
                 [Op.in]: pacienteIds
             }
-        };
-
-        includeAsignacion.required = true;
+        });
     }
 
     if (personaIdCuidadora !== undefined) {
@@ -60,8 +55,19 @@ const obtenerIncludeAsignacion = async (
             personaIdCuidadora
         );
 
-        includeAsignacion.where = {
+        restricciones.push({
             cuidador_id: cuidadora.id
+        });
+    }
+
+    const includeAsignacion: IncludeOptions = {
+        model: Asignacion,
+        as: 'asignacion'
+    };
+
+    if (restricciones.length > 0) {
+        includeAsignacion.where = {
+            [Op.and]: restricciones
         };
 
         includeAsignacion.required = true;
@@ -70,12 +76,12 @@ const obtenerIncludeAsignacion = async (
     return includeAsignacion;
 };
 
-export const crearParteDiario = async (
-    datos: DatosCrearParteDiario,
+const validarAsignacionActiva = async (
+    asignacionId: number,
     personaIdCuidadora?: number
-) => {
+): Promise<Asignacion> => {
     const whereAsignacion: WhereOptions<Asignacion> = {
-        id: datos.asignacion_id
+        id: asignacionId
     };
 
     if (personaIdCuidadora !== undefined) {
@@ -83,7 +89,9 @@ export const crearParteDiario = async (
             personaIdCuidadora
         );
 
-        whereAsignacion.cuidador_id = cuidadora.id;
+        Object.assign(whereAsignacion, {
+            cuidador_id: cuidadora.id
+        });
     }
 
     const asignacion = await Asignacion.findOne({
@@ -96,6 +104,40 @@ export const crearParteDiario = async (
             404
         );
     }
+
+    if (!asignacion.activo) {
+        throw new AppError(
+            'No se pueden registrar o modificar partes diarios de una asignación inactiva',
+            409
+        );
+    }
+
+    const paciente = await Paciente.findByPk(
+        asignacion.paciente_id
+    );
+
+    if (!paciente) {
+        throw new AppError('El paciente no existe', 404);
+    }
+
+    if (!paciente.activo) {
+        throw new AppError(
+            'No se pueden registrar o modificar partes diarios de un paciente inactivo',
+            409
+        );
+    }
+
+    return asignacion;
+};
+
+export const crearParteDiario = async (
+    datos: DatosCrearParteDiario,
+    personaIdCuidadora?: number
+) => {
+    await validarAsignacionActiva(
+        datos.asignacion_id,
+        personaIdCuidadora
+    );
 
     return await ParteDiario.create({
         asignacion_id: datos.asignacion_id,
@@ -285,30 +327,13 @@ export const actualizarParteDiario = async (
         );
     }
 
-    if (datos.asignacion_id !== undefined) {
-        const whereAsignacion: WhereOptions<Asignacion> = {
-            id: datos.asignacion_id
-        };
+    const asignacionIdFinal = datos.asignacion_id ??
+        parte.asignacion_id;
 
-        if (personaIdCuidadora !== undefined) {
-            const cuidadora = await obtenerCuidadoraPorPersona(
-                personaIdCuidadora
-            );
-
-            whereAsignacion.cuidador_id = cuidadora.id;
-        }
-
-        const asignacion = await Asignacion.findOne({
-            where: whereAsignacion
-        });
-
-        if (!asignacion) {
-            throw new AppError(
-                'La asignación no existe o no pertenece a la cuidadora',
-                404
-            );
-        }
-    }
+    await validarAsignacionActiva(
+        asignacionIdFinal,
+        personaIdCuidadora
+    );
 
     await parte.update(datos);
 

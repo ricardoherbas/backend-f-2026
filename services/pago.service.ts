@@ -1,6 +1,9 @@
 import {Op, Order, WhereOptions} from 'sequelize';
 import {Pago, Paciente} from '../models';
-import {DatosCrearPago, DatosActualizarPago} from '../interfaces/pago.interface';
+import {
+    DatosCrearPago,
+    DatosActualizarPago
+} from '../interfaces/pago.interface';
 import {EstadoPago} from '../types/estado-pago.type';
 import {MedioPago} from '../types/medio-pago.type';
 import {obtenerPacientesVinculados} from './vinculoFamiliar.service';
@@ -61,14 +64,27 @@ const obtenerWherePorFamiliar = async (
     };
 };
 
-export const crearPago = async (
-    datos: DatosCrearPago
-) => {
-    const paciente = await Paciente.findByPk(datos.paciente_id);
+const validarPacienteActivo = async (
+    pacienteId: number
+): Promise<void> => {
+    const paciente = await Paciente.findByPk(pacienteId);
 
     if (!paciente) {
         throw new AppError('El paciente no existe', 404);
     }
+
+    if (!paciente.activo) {
+        throw new AppError(
+            'No se pueden gestionar pagos de un paciente inactivo',
+            409
+        );
+    }
+};
+
+export const crearPago = async (
+    datos: DatosCrearPago
+) => {
+    await validarPacienteActivo(datos.paciente_id);
 
     const pagoExistente = await Pago.findOne({
         where: {
@@ -99,12 +115,15 @@ export const obtenerPago = async (
     id: number,
     personaIdFamiliar?: number
 ) => {
-    const where = await obtenerWherePorFamiliar(personaIdFamiliar);
-
-    Object.assign(where, {id});
+    const condiciones: WhereOptions[] = [
+        {id},
+        await obtenerWherePorFamiliar(personaIdFamiliar)
+    ];
 
     const pago = await Pago.findOne({
-        where,
+        where: {
+            [Op.and]: condiciones
+        },
         include: incluirPaciente()
     });
 
@@ -146,8 +165,6 @@ export const listarPagosPaginado = async (
 
     const offset = (page - 1) * limit;
 
-    // Se conserva el alcance del familiar aunque se envíe un filtro
-    // por paciente desde la URL.
     const condiciones: WhereOptions[] = [
         await obtenerWherePorFamiliar(personaIdFamiliar)
     ];
@@ -241,11 +258,7 @@ export const actualizarPago = async (
     const periodo = datos.periodo ?? pago.periodo;
 
     if (datos.paciente_id !== undefined) {
-        const paciente = await Paciente.findByPk(datos.paciente_id);
-
-        if (!paciente) {
-            throw new AppError('El paciente no existe', 404);
-        }
+        await validarPacienteActivo(pacienteId);
     }
 
     const pagoExistente = await Pago.findOne({

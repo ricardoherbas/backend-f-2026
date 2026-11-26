@@ -1,17 +1,35 @@
-
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import {Usuario, Persona, Familiar, VinculoFamiliar, TokenRecuperacion} from '../models';
-import {DatosRegistroFamiliar, DatosLogin} from '../interfaces/auth.interface';
+
+import {
+    Usuario,
+    Persona,
+    Familiar,
+    VinculoFamiliar,
+    TokenRecuperacion,
+    Paciente
+} from '../models';
+
+import {
+    DatosRegistroFamiliar,
+    DatosLogin
+} from '../interfaces/auth.interface';
+
 import transporter from '../config/conexion-email';
 import {sequelize} from '../config/conexion-bd';
 import {AppError} from '../utils/app-error';
 
-export const registrarFamiliar = async (datos: DatosRegistroFamiliar) => {
-    const passwordHash = await bcrypt.hash(datos.password, 10);
+// Registra una cuenta familiar mediante un código de vinculación.
+export const registrarFamiliar = async (
+    datos: DatosRegistroFamiliar
+) => {
+    const passwordHash = await bcrypt.hash(
+        datos.password,
+        10
+    );
 
-    const usuario = await sequelize.transaction(async (transaction) => {
+    const usuario = await sequelize.transaction(async transaction => {
         const vinculo = await VinculoFamiliar.findOne({
             where: {
                 codigo_vinculacion: datos.codigo_vinculacion,
@@ -29,10 +47,29 @@ export const registrarFamiliar = async (datos: DatosRegistroFamiliar) => {
             );
         }
 
-        if (new Date(vinculo.expira_en).getTime() <= Date.now()) {
+        if (
+            new Date(vinculo.expira_en).getTime() <= Date.now()
+        ) {
             throw new AppError(
                 'El código de vinculación ha expirado',
                 410
+            );
+        }
+
+        // Bloquea el paciente para coordinar el registro
+        // con una posible desactivación.
+        const paciente = await Paciente.findByPk(
+            vinculo.paciente_id,
+            {
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            }
+        );
+
+        if (!paciente || !paciente.activo) {
+            throw new AppError(
+                'No se puede completar el registro porque el paciente está inactivo',
+                409
             );
         }
 
@@ -100,7 +137,10 @@ export const registrarFamiliar = async (datos: DatosRegistroFamiliar) => {
     };
 };
 
-export const iniciarSesion = async (datos: DatosLogin) => {
+// Inicia sesión y genera un token JWT.
+export const iniciarSesion = async (
+    datos: DatosLogin
+) => {
     const usuario = await Usuario.findOne({
         where: {
             email: datos.email
@@ -163,7 +203,10 @@ export const iniciarSesion = async (datos: DatosLogin) => {
     };
 };
 
-export const obtenerPerfil = async (usuarioId: number) => {
+// Obtiene los datos del usuario autenticado.
+export const obtenerPerfil = async (
+    usuarioId: number
+) => {
     const usuario = await Usuario.findByPk(usuarioId, {
         attributes: [
             'id',
@@ -192,7 +235,10 @@ export const obtenerPerfil = async (usuarioId: number) => {
     return usuario;
 };
 
-export const solicitarRecuperacionPassword = async (email: string) => {
+// Solicita la recuperación de contraseña.
+export const solicitarRecuperacionPassword = async (
+    email: string
+) => {
     const respuesta = {
         mensaje: 'Si existe una cuenta con ese email, recibirás instrucciones para recuperar tu contraseña'
     };
@@ -236,7 +282,7 @@ export const solicitarRecuperacionPassword = async (email: string) => {
         Date.now() + 15 * 60 * 1000
     );
 
-    await sequelize.transaction(async (transaction) => {
+    await sequelize.transaction(async transaction => {
         await TokenRecuperacion.update(
             {usado: true},
             {
@@ -291,6 +337,7 @@ export const solicitarRecuperacionPassword = async (email: string) => {
     return respuesta;
 };
 
+// Restablece la contraseña utilizando un token válido.
 export const restablecerPassword = async (
     token: string,
     nuevaPassword: string
@@ -327,7 +374,9 @@ export const restablecerPassword = async (
         );
     }
 
-    if (new Date(registro.expira_en).getTime() <= Date.now()) {
+    if (
+        new Date(registro.expira_en).getTime() <= Date.now()
+    ) {
         await TokenRecuperacion.update(
             {usado: true},
             {
@@ -344,7 +393,7 @@ export const restablecerPassword = async (
         );
     }
 
-    await sequelize.transaction(async (transaction) => {
+    await sequelize.transaction(async transaction => {
         const registroBloqueado = await TokenRecuperacion.findOne({
             where: {
                 id: registro.id,
@@ -361,7 +410,9 @@ export const restablecerPassword = async (
             );
         }
 
-        if (new Date(registroBloqueado.expira_en).getTime() <= Date.now()) {
+        if (
+            new Date(registroBloqueado.expira_en).getTime() <= Date.now()
+        ) {
             throw new AppError(
                 'El enlace de recuperación ha expirado',
                 410

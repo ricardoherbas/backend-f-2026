@@ -1,4 +1,3 @@
-
 import {randomBytes} from 'crypto';
 import {sequelize} from '../config/conexion-bd';
 import {VinculoFamiliar, Familiar, Paciente} from '../models';
@@ -12,10 +11,9 @@ const generarTokenVinculacion = (): string => {
 export const crearVinculoFamiliar = async (
     datos: DatosCrearVinculo
 ) => {
-    const familiar =
-        await Familiar.findByPk(
-            datos.familiar_id
-        );
+    const familiar = await Familiar.findByPk(
+        datos.familiar_id
+    );
 
     if (!familiar) {
         throw new AppError(
@@ -24,10 +22,9 @@ export const crearVinculoFamiliar = async (
         );
     }
 
-    const paciente =
-        await Paciente.findByPk(
-            datos.paciente_id
-        );
+    const paciente = await Paciente.findByPk(
+        datos.paciente_id
+    );
 
     if (!paciente) {
         throw new AppError(
@@ -36,15 +33,19 @@ export const crearVinculoFamiliar = async (
         );
     }
 
-    const vinculoExistente =
-        await VinculoFamiliar.findOne({
-            where: {
-                familiar_id:
-                    datos.familiar_id,
-                paciente_id:
-                    datos.paciente_id
-            }
-        });
+    if (!paciente.activo) {
+        throw new AppError(
+            'No se puede vincular un familiar con un paciente inactivo',
+            409
+        );
+    }
+
+    const vinculoExistente = await VinculoFamiliar.findOne({
+        where: {
+            familiar_id: datos.familiar_id,
+            paciente_id: datos.paciente_id
+        }
+    });
 
     if (vinculoExistente) {
         throw new AppError(
@@ -53,31 +54,22 @@ export const crearVinculoFamiliar = async (
         );
     }
 
-    const tokenVinculacion =
-        generarTokenVinculacion();
+    const tokenVinculacion = generarTokenVinculacion();
 
-    const expiraEn =
-        new Date(Date.now() + 2 * 60 * 60 * 1000);
+    const expiraEn = new Date(
+        Date.now() + 2 * 60 * 60 * 1000
+    );
 
-    const vinculo =
-        await VinculoFamiliar.create({
-            familiar_id:
-                datos.familiar_id,
-            paciente_id:
-                datos.paciente_id,
-            parentesco:
-                datos.parentesco,
-            es_contacto_principal:
-                datos.es_contacto_principal ?? false,
-            codigo_vinculacion:
-                tokenVinculacion,
-            codigo_usado:
-                false,
-            expira_en:
-                expiraEn,
-            activo:
-                true
-        });
+    const vinculo = await VinculoFamiliar.create({
+        familiar_id: datos.familiar_id,
+        paciente_id: datos.paciente_id,
+        parentesco: datos.parentesco,
+        es_contacto_principal: datos.es_contacto_principal ?? false,
+        codigo_vinculacion: tokenVinculacion,
+        codigo_usado: false,
+        expira_en: expiraEn,
+        activo: true
+    });
 
     return vinculo;
 };
@@ -86,14 +78,13 @@ export const regenerarCodigoVinculacion = async (
     id: number
 ) => {
     return await sequelize.transaction(async (transaction) => {
-        const vinculo =
-            await VinculoFamiliar.findByPk(
-                id,
-                {
-                    transaction,
-                    lock: transaction.LOCK.UPDATE
-                }
-            );
+        const vinculo = await VinculoFamiliar.findByPk(
+            id,
+            {
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            }
+        );
 
         if (!vinculo) {
             throw new AppError(
@@ -116,11 +107,23 @@ export const regenerarCodigoVinculacion = async (
             );
         }
 
-        const nuevoCodigo =
-            generarTokenVinculacion();
+        const paciente = await Paciente.findByPk(
+            vinculo.paciente_id,
+            {transaction}
+        );
 
-        const nuevaExpiracion =
-            new Date(Date.now() + 2 * 60 * 60 * 1000);
+        if (!paciente || !paciente.activo) {
+            throw new AppError(
+                'No se puede regenerar el código de un paciente inactivo',
+                409
+            );
+        }
+
+        const nuevoCodigo = generarTokenVinculacion();
+
+        const nuevaExpiracion = new Date(
+            Date.now() + 2 * 60 * 60 * 1000
+        );
 
         await vinculo.update(
             {
@@ -142,12 +145,11 @@ export const obtenerVinculoFamiliar = async (
     let familiarId: number | undefined;
 
     if (personaIdFamiliar !== undefined) {
-        const familiar =
-            await Familiar.findOne({
-                where: {
-                    persona_id: personaIdFamiliar
-                }
-            });
+        const familiar = await Familiar.findOne({
+            where: {
+                persona_id: personaIdFamiliar
+            }
+        });
 
         if (!familiar) {
             throw new AppError(
@@ -159,33 +161,32 @@ export const obtenerVinculoFamiliar = async (
         familiarId = familiar.id;
     }
 
-    const vinculo =
-        await VinculoFamiliar.findOne({
-            where: {
-                id,
-                ...(familiarId !== undefined
-                    ? {
-                        familiar_id: familiarId,
-                        activo: true
-                    }
-                    : {})
-            },
-            attributes: {
-                exclude: [
-                    'codigo_vinculacion'
-                ]
-            },
-            include: [
-                {
-                    model: Familiar,
-                    as: 'familiar'
-                },
-                {
-                    model: Paciente,
-                    as: 'paciente'
+    const vinculo = await VinculoFamiliar.findOne({
+        where: {
+            id,
+            ...(familiarId !== undefined
+                ? {
+                    familiar_id: familiarId,
+                    activo: true
                 }
+                : {})
+        },
+        attributes: {
+            exclude: [
+                'codigo_vinculacion'
             ]
-        });
+        },
+        include: [
+            {
+                model: Familiar,
+                as: 'familiar'
+            },
+            {
+                model: Paciente,
+                as: 'paciente'
+            }
+        ]
+    });
 
     if (!vinculo) {
         throw new AppError(
@@ -223,8 +224,7 @@ export const actualizarVinculoFamiliar =
         id: number,
         datos: DatosActualizarVinculo
     ) => {
-        const vinculo =
-            await VinculoFamiliar.findByPk(id);
+        const vinculo = await VinculoFamiliar.findByPk(id);
 
         if (!vinculo) {
             throw new AppError(
@@ -258,8 +258,7 @@ export const actualizarVinculoFamiliar =
 
 export const desactivarVinculoFamiliar =
     async (id: number) => {
-        const vinculo =
-            await VinculoFamiliar.findByPk(id);
+        const vinculo = await VinculoFamiliar.findByPk(id);
 
         if (!vinculo) {
             throw new AppError(
@@ -284,28 +283,55 @@ export const desactivarVinculoFamiliar =
 
 export const activarVinculoFamiliar =
     async (id: number) => {
-        const vinculo =
-            await VinculoFamiliar.findByPk(id);
-
-        if (!vinculo) {
-            throw new AppError(
-                'Vínculo familiar no encontrado',
-                404
+        return await sequelize.transaction(async (transaction) => {
+            const vinculo = await VinculoFamiliar.findByPk(
+                id,
+                {
+                    transaction,
+                    lock: transaction.LOCK.UPDATE
+                }
             );
-        }
 
-        if (vinculo.activo) {
-            throw new AppError(
-                'El vínculo familiar ya está activo',
-                409
+            if (!vinculo) {
+                throw new AppError(
+                    'Vínculo familiar no encontrado',
+                    404
+                );
+            }
+
+            if (vinculo.activo) {
+                throw new AppError(
+                    'El vínculo familiar ya está activo',
+                    409
+                );
+            }
+
+            const paciente = await Paciente.findByPk(
+                vinculo.paciente_id,
+                {transaction}
             );
-        }
 
-        await vinculo.update({
-            activo: true
+            if (!paciente) {
+                throw new AppError(
+                    'El paciente no existe',
+                    404
+                );
+            }
+
+            if (!paciente.activo) {
+                throw new AppError(
+                    'No se puede activar un vínculo de un paciente inactivo',
+                    409
+                );
+            }
+
+            await vinculo.update(
+                {activo: true},
+                {transaction}
+            );
+
+            return vinculo;
         });
-
-        return vinculo;
     };
 
 export const obtenerPacientesVinculados = async (

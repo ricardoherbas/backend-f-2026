@@ -1,7 +1,28 @@
-
-import {UniqueConstraintError} from 'sequelize';
+import {
+    UniqueConstraintError,
+    Op,
+    WhereOptions,
+    Order
+} from 'sequelize';
 import {Persona} from '../models';
 import {AppError} from '../utils/app-error';
+
+interface FiltrosPersonas {
+    page: number;
+    limit: number;
+    search?: string;
+    sortBy?: string;
+    order?: 'ASC' | 'DESC';
+}
+
+const CAMPOS_ORDENAMIENTO = [
+    'id',
+    'nombre',
+    'apellido',
+    'dni',
+    'fecha_nacimiento',
+    'telefono'
+];
 
 export const crearPersona = async (
     datos: {
@@ -49,6 +70,78 @@ export const crearPersona = async (
 
         throw error;
     }
+};
+
+export const obtenerPersona = async (id: number) => {
+    const persona = await Persona.findByPk(id);
+
+    if (!persona) {
+        throw new AppError(
+            'Persona no encontrada',
+            404
+        );
+    }
+
+    return persona;
+};
+
+export const listarPersonas = async () => {
+    return await Persona.findAll({
+        order: [['id', 'ASC']]
+    });
+};
+
+export const listarPersonasPaginado = async (
+    filtros: FiltrosPersonas
+) => {
+    const {
+        page,
+        limit,
+        search,
+        sortBy = 'id',
+        order = 'ASC'
+    } = filtros;
+
+    const offset = (page - 1) * limit;
+
+    const where: WhereOptions = search
+        ? {
+            [Op.or]: [
+                {nombre: {[Op.iLike]: `%${search}%`}},
+                {apellido: {[Op.iLike]: `%${search}%`}},
+                {dni: {[Op.iLike]: `%${search}%`}},
+                {telefono: {[Op.iLike]: `%${search}%`}}
+            ]
+        }
+        : {};
+
+    const campoOrden = CAMPOS_ORDENAMIENTO.includes(sortBy)
+        ? sortBy
+        : 'id';
+
+    const direccion = order === 'DESC' ? 'DESC' : 'ASC';
+
+    const ordenamiento: Order = [
+        [campoOrden, direccion],
+        ['id', 'ASC']
+    ];
+
+    const resultado = await Persona.findAndCountAll({
+        where,
+        limit,
+        offset,
+        order: ordenamiento
+    });
+
+    return {
+        datos: resultado.rows,
+        paginacion: {
+            pagina: page,
+            limite: limit,
+            total: resultado.count,
+            totalPaginas: Math.ceil(resultado.count / limit)
+        }
+    };
 };
 
 export const actualizarPersona = async (

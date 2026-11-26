@@ -52,14 +52,14 @@ const obtenerWherePorUsuario = async (
     personaIdFamiliar?: number,
     personaIdCuidadora?: number
 ): Promise<WhereOptions> => {
-    const where: WhereOptions = {};
+    const restricciones: WhereOptions[] = [];
 
     if (personaIdFamiliar !== undefined) {
         const pacienteIds = await obtenerPacientesVinculados(
             personaIdFamiliar
         );
 
-        Object.assign(where, {
+        restricciones.push({
             paciente_id: {
                 [Op.in]: pacienteIds
             }
@@ -71,24 +71,45 @@ const obtenerWherePorUsuario = async (
             personaIdCuidadora
         );
 
-        Object.assign(where, {
+        restricciones.push({
             paciente_id: {
                 [Op.in]: pacienteIds
             }
         });
     }
 
-    return where;
+    if (restricciones.length === 0) {
+        return {};
+    }
+
+    return {
+        [Op.and]: restricciones
+    };
+};
+
+const validarPacienteActivo = async (
+    pacienteId: number
+): Promise<Paciente> => {
+    const paciente = await Paciente.findByPk(pacienteId);
+
+    if (!paciente) {
+        throw new AppError('El paciente no existe', 404);
+    }
+
+    if (!paciente.activo) {
+        throw new AppError(
+            'No se pueden crear o modificar tratamientos para un paciente inactivo',
+            409
+        );
+    }
+
+    return paciente;
 };
 
 export const crearTratamiento = async (
     datos: DatosCrearTratamiento
 ) => {
-    const paciente = await Paciente.findByPk(datos.paciente_id);
-
-    if (!paciente) {
-        throw new AppError('El paciente no existe', 404);
-    }
+    await validarPacienteActivo(datos.paciente_id);
 
     const medicamento = await Medicamento.findByPk(datos.medicamento_id);
 
@@ -239,7 +260,14 @@ export const actualizarTratamiento = async (
         throw new AppError('Tratamiento no encontrado', 404);
     }
 
-    if (datos.paciente_id !== undefined) {
+    const pacienteIdFinal = datos.paciente_id ??
+        tratamiento.paciente_id;
+
+    const activaFinal = datos.activa ?? tratamiento.activa;
+
+    if (activaFinal) {
+        await validarPacienteActivo(pacienteIdFinal);
+    } else if (datos.paciente_id !== undefined) {
         const paciente = await Paciente.findByPk(datos.paciente_id);
 
         if (!paciente) {
@@ -269,5 +297,13 @@ export const eliminarTratamiento = async (
         throw new AppError('Tratamiento no encontrado', 404);
     }
 
-    await tratamiento.destroy();
+    if (!tratamiento.activa) {
+        throw new AppError('El tratamiento ya se encuentra inactivo', 409);
+    }
+
+    await tratamiento.update({
+        activa: false
+    });
+
+    return tratamiento;
 };

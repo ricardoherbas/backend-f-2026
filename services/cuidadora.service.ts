@@ -1,6 +1,11 @@
+import bcrypt from 'bcryptjs';
 import {Op, WhereOptions, Order} from 'sequelize';
-import {Cuidadora, Persona} from '../models';
-import {DatosCrearCuidadora} from '../interfaces/cuidadora.interface';
+import {sequelize} from '../config/conexion-bd';
+import {Cuidadora, Persona, Usuario} from '../models';
+import {
+    DatosCrearCuidadora,
+    DatosCrearCuidadoraConCuenta
+} from '../interfaces/cuidadora.interface';
 import {AppError} from '../utils/app-error';
 
 interface FiltrosCuidadoras {
@@ -19,24 +24,60 @@ const CAMPOS_ORDENAMIENTO = [
 ];
 
 export const crearCuidadora = async (
-    datos: DatosCrearCuidadora
+    datos: DatosCrearCuidadoraConCuenta
 ) => {
-    const persona = await Persona.findByPk(datos.persona_id);
+    return await sequelize.transaction(async transaction => {
+        const persona = await Persona.findByPk(datos.persona_id, {
+            transaction
+        });
 
-    if (!persona) {
-        throw new AppError('La persona no existe', 404);
-    }
+        if (!persona) {
+            throw new AppError('La persona no existe', 404);
+        }
 
-    const cuidadoraExistente = await Cuidadora.findOne({
-        where: {persona_id: datos.persona_id}
-    });
+        const cuidadoraExistente = await Cuidadora.findOne({
+            where: {persona_id: datos.persona_id},
+            transaction
+        });
 
-    if (cuidadoraExistente) {
-        throw new AppError('La persona ya es cuidadora', 409);
-    }
+        if (cuidadoraExistente) {
+            throw new AppError('La persona ya es cuidadora', 409);
+        }
 
-    return await Cuidadora.create({
-        persona_id: datos.persona_id
+        const usuarioExistente = await Usuario.findOne({
+            where: {persona_id: datos.persona_id},
+            transaction
+        });
+
+        if (usuarioExistente) {
+            throw new AppError(
+                'La persona ya tiene una cuenta de usuario',
+                409
+            );
+        }
+
+        const emailExistente = await Usuario.findOne({
+            where: {email: datos.email},
+            transaction
+        });
+
+        if (emailExistente) {
+            throw new AppError('El email ya está registrado', 409);
+        }
+
+        const passwordHash = await bcrypt.hash(datos.password, 10);
+
+        await Usuario.create({
+            persona_id: datos.persona_id,
+            email: datos.email,
+            password_hash: passwordHash,
+            rol: 'cuidadora',
+            activo: true
+        }, {transaction});
+
+        return await Cuidadora.create({
+            persona_id: datos.persona_id
+        }, {transaction});
     });
 };
 

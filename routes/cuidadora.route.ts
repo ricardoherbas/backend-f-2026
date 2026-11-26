@@ -1,13 +1,12 @@
-
 import {Router} from 'express';
 import {crear, obtener, listar, actualizar, eliminar} from '../controllers/cuidadora.controller';
 import {verificarToken} from '../middlewares/auth.middleware';
 import {verificarRol} from '../middlewares/rol.middleware';
-import {validarCuidadora} from '../validators/cuidadora.validator';
+import {validarCuidadora, validarCrearCuidadora} from '../validators/cuidadora.validator';
 
 const router = Router();
 
-router.post('/', verificarToken, verificarRol('administrador', 'secretaria'), validarCuidadora, crear);
+router.post('/', verificarToken, verificarRol('administrador', 'secretaria'), validarCrearCuidadora, crear);
 router.get('/', verificarToken, verificarRol('administrador', 'secretaria'), listar);
 router.get('/:id', verificarToken, verificarRol('administrador', 'secretaria'), obtener);
 router.put('/:id', verificarToken, verificarRol('administrador', 'secretaria'), validarCuidadora, actualizar);

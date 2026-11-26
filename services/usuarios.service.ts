@@ -22,6 +22,39 @@ import {
 import {RolUsuario} from '../types/rol-usuario.type';
 import {AppError} from '../utils/app-error';
 
+// Comprueba si la persona ya tiene un perfil para el rol indicado.
+const existePerfil = async (
+    rol: RolUsuario,
+    personaId: number,
+    transaction: Transaction
+): Promise<boolean> => {
+    switch (rol) {
+        case 'administrador':
+            return Boolean(await Administrador.findOne({
+                where: {persona_id: personaId},
+                transaction
+            }));
+
+        case 'secretaria':
+            return Boolean(await Secretaria.findOne({
+                where: {persona_id: personaId},
+                transaction
+            }));
+
+        case 'cuidadora':
+            return Boolean(await Cuidadora.findOne({
+                where: {persona_id: personaId},
+                transaction
+            }));
+
+        case 'familiar':
+            return Boolean(await Familiar.findOne({
+                where: {persona_id: personaId},
+                transaction
+            }));
+    }
+};
+
 // Crea el perfil correspondiente al rol.
 const crearPerfil = async (
     rol: RolUsuario,
@@ -279,7 +312,8 @@ export const actualizarUsuario = async (
 ) => {
     return await sequelize.transaction(async transaction => {
         const usuario = await Usuario.findByPk(id, {
-            transaction
+            transaction,
+            lock: transaction.LOCK.UPDATE
         });
 
         if (!usuario) {
@@ -291,7 +325,10 @@ export const actualizarUsuario = async (
 
         const persona = await Persona.findByPk(
             usuario.persona_id,
-            {transaction}
+            {
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            }
         );
 
         if (!persona) {
@@ -342,14 +379,27 @@ export const actualizarUsuario = async (
             datos.rol !== undefined &&
             datos.rol !== usuario.rol
         ) {
-            await crearPerfil(
+            const perfilDestinoExiste = await existePerfil(
                 datos.rol,
                 persona.id,
                 transaction
             );
 
+            if (perfilDestinoExiste) {
+                throw new AppError(
+                    'La persona ya tiene un perfil asociado al rol solicitado',
+                    409
+                );
+            }
+
             await eliminarPerfilAnterior(
                 usuario.rol,
+                persona.id,
+                transaction
+            );
+
+            await crearPerfil(
+                datos.rol,
                 persona.id,
                 transaction
             );
@@ -436,60 +486,85 @@ export const desactivarUsuario = async (
         );
     }
 
-    const usuario = await Usuario.findByPk(id);
+    return await sequelize.transaction(async transaction => {
+        const usuario = await Usuario.findByPk(id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
 
-    if (!usuario) {
-        throw new AppError(
-            'Usuario no encontrado',
-            404
+        if (!usuario) {
+            throw new AppError(
+                'Usuario no encontrado',
+                404
+            );
+        }
+
+        if (!usuario.activo) {
+            throw new AppError(
+                'El usuario ya está desactivado',
+                409
+            );
+        }
+
+        await usuario.update(
+            {activo: false},
+            {transaction}
         );
-    }
 
-    if (!usuario.activo) {
-        throw new AppError(
-            'El usuario ya está desactivado',
-            409
-        );
-    }
-
-    await usuario.update({
-        activo: false
+        return {
+            id: usuario.id,
+            email: usuario.email,
+            rol: usuario.rol,
+            activo: usuario.activo
+        };
     });
-
-    return {
-        id: usuario.id,
-        email: usuario.email,
-        rol: usuario.rol,
-        activo: usuario.activo
-    };
 };
 
 // Reactiva una cuenta existente.
 export const activarUsuario = async (id: number) => {
-    const usuario = await Usuario.findByPk(id);
+    return await sequelize.transaction(async transaction => {
+        const usuario = await Usuario.findByPk(id, {
+            transaction,
+            lock: transaction.LOCK.UPDATE
+        });
 
-    if (!usuario) {
-        throw new AppError(
-            'Usuario no encontrado',
-            404
+        if (!usuario) {
+            throw new AppError(
+                'Usuario no encontrado',
+                404
+            );
+        }
+
+        if (usuario.activo) {
+            throw new AppError(
+                'El usuario ya está activo',
+                409
+            );
+        }
+
+        const perfilExiste = await existePerfil(
+            usuario.rol,
+            usuario.persona_id,
+            transaction
         );
-    }
 
-    if (usuario.activo) {
-        throw new AppError(
-            'El usuario ya está activo',
-            409
+        if (!perfilExiste) {
+            throw new AppError(
+                'No se puede activar la cuenta porque no existe el perfil correspondiente',
+                409
+            );
+        }
+
+        await usuario.update(
+            {activo: true},
+            {transaction}
         );
-    }
 
-    await usuario.update({
-        activo: true
+        return {
+            id: usuario.id,
+            email: usuario.email,
+            rol: usuario.rol,
+            activo: usuario.activo
+        };
     });
-
-    return {
-        id: usuario.id,
-        email: usuario.email,
-        rol: usuario.rol,
-        activo: usuario.activo
-    };
 };
