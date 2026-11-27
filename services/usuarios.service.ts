@@ -233,8 +233,9 @@ export const crearUsuario = async (
 };
 
 // Lista todos los usuarios, incluidos los desactivados.
-export const listarUsuarios = async () => {
+export const listarUsuarios = async (rol?: RolUsuario) => {
     return await Usuario.findAll({
+        ...(rol && {where: {rol}}),
         attributes: {
             exclude: ['password_hash']
         },

@@ -31,12 +31,15 @@ export const crear = async (
 
 // Listar todos los usuarios.
 export const listar = async (
-    _req: Request,
+    req: RequestAutenticado,
     res: Response,
     next: NextFunction
 ): Promise<void> => {
     try {
-        const usuarios = await listarUsuarios();
+        // La secretaria solo ve cuentas de cuidadoras.
+        const usuarios = await listarUsuarios(
+            req.usuario?.rol === 'secretaria' ? 'cuidadora' : undefined
+        );
 
         res.status(200).json({
             usuarios
